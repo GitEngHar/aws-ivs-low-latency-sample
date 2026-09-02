@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AWS IVS 低レイテンシー配信 & 視聴</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        .container { display: flex; gap: 40px; flex-wrap: wrap; }
+        .box { border: 1px solid #ccc; padding: 20px; border-radius: 8px; }
+        video { width: 400px; height: 300px; background: #000; border-radius: 4px; }
+        button { display: block; margin-top: 10px; padding: 10px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<h1>AWS IVS 低レイテンシー デモ</h1>
+
+<div class="container">
+    <!-- 配信エリア -->
+    <div class="box">
+        <h2>1. 配信側 (Broadcast)</h2>
+        <video id="preview" autoplay muted playsinline></video>
+        <button id="start-btn">配信開始</button>
+    </div>
+
+    <!-- 視聴エリア -->
+    <div class="box">
+        <h2>2. 視聴側 (Player)</h2>
+        <video id="video-player" controls playsinline></video>
+    </div>
+</div>
+
+<!-- JavaScriptファイルの参照 -->
+<script type="module" src="broadcast.js"></script>
+<script type="module" src="player.js"></script>
+
+</body>
+</html>
