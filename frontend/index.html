@@ -11,6 +11,10 @@
         video, canvas { width: 400px; height: 300px; background: #000; border-radius: 4px; }
         button { display: block; margin-top: 10px; padding: 10px; cursor: pointer; }
         select { display: block; margin-top: 10px; padding: 8px; }
+        .status { margin-top: 10px; font-size: 0.9em; color: #a00; min-height: 1.2em; }
+        table { border-collapse: collapse; margin-top: 10px; width: 100%; font-size: 0.9em; }
+        th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+        td button { display: inline-block; margin: 0 4px 0 0; padding: 4px 8px; }
     </style>
 </head>
 <body>
@@ -22,22 +26,60 @@
     <div class="box">
         <h2>1. 配信側 (Broadcast)</h2>
         <canvas id="preview"></canvas>
+
+        <select id="channel-select">
+            <option value="">チャネルを読み込み中...</option>
+        </select>
+        <button id="create-channel-btn">新規チャネル作成</button>
+
         <select id="preset-select">
-            <option value="BASIC_LANDSCAPE" selected>BASIC_LANDSCAPE (1280×720 / 30fps / 3.5Mbps / 横)</option>
-            <option value="BASIC_FULL_HD_LANDSCAPE">BASIC_FULL_HD_LANDSCAPE (1920×1080 / 30fps / 3.5Mbps / 横)</option>
+            <option value="BASIC_LANDSCAPE">BASIC_LANDSCAPE (1280×720 / 30fps / 3.5Mbps / 横)</option>
+            <option value="BASIC_FULL_HD_LANDSCAPE" selected>BASIC_FULL_HD_LANDSCAPE (1920×1080 / 30fps / 3.5Mbps / 横) ※視聴側で1080p/720pを選択するにはこちらを使用</option>
             <option value="STANDARD_LANDSCAPE">STANDARD_LANDSCAPE (1280×720 / 30fps / 2.5Mbps / 横)</option>
             <option value="BASIC_PORTRAIT">BASIC_PORTRAIT (720×1280 / 30fps / 3.5Mbps / 縦)</option>
             <option value="BASIC_FULL_HD_PORTRAIT">BASIC_FULL_HD_PORTRAIT (1080×1920 / 30fps / 3.5Mbps / 縦)</option>
             <option value="STANDARD_PORTRAIT">STANDARD_PORTRAIT (720×1280 / 30fps / 2.5Mbps / 縦)</option>
         </select>
-        <button id="start-btn">配信開始</button>
+        <button id="start-btn" disabled>配信開始</button>
+        <button id="stop-broadcast-btn" disabled>配信停止</button>
+        <button id="visibility-toggle-btn" disabled>プライベートに切替</button>
+        <p id="broadcast-status" class="status"></p>
     </div>
 
     <!-- 視聴エリア -->
     <div class="box">
         <h2>2. 視聴側 (Player)</h2>
         <video id="video-player" controls playsinline></video>
-        <button id="watch-btn">視聴開始</button>
+
+        <select id="watch-channel-select">
+            <option value="">チャネルを読み込み中...</option>
+        </select>
+        <button id="watch-btn" disabled>視聴開始</button>
+
+        <select id="quality-select" disabled>
+            <option value="">画質: 視聴開始後に選択可能</option>
+        </select>
+        <p id="watch-status" class="status"></p>
+    </div>
+
+    <!-- 運営者エリア -->
+    <div class="box">
+        <h2>3. 運営者 (Admin)</h2>
+        <button id="admin-refresh-btn">一覧を更新</button>
+        <table id="admin-channel-table">
+            <thead>
+            <tr>
+                <th>チャネル名</th>
+                <th>所有者</th>
+                <th>公開設定</th>
+                <th>操作</th>
+            </tr>
+            </thead>
+            <tbody id="admin-channel-tbody">
+            <tr><td colspan="4">読み込み中...</td></tr>
+            </tbody>
+        </table>
+        <p id="admin-status" class="status"></p>
     </div>
 </div>
 
@@ -51,6 +93,7 @@
 <!-- JavaScriptファイルの参照 -->
 <script type="module" src="broadcast.js"></script>
 <script type="module" src="player.js"></script>
+<script type="module" src="admin.js"></script>
 
 </body>
 </html>
