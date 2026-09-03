@@ -6,28 +6,52 @@ const AmazonIVSBroadcastClient = window.IVSBroadcastClient;
 const INGEST_ENDPOINT = window.ENV.BROADCAST_INGEST_ENDPOINT;
 const STREAM_KEY = window.ENV.BROADCAST_STREAM_KEY;
 
-async function initBroadcast() {
-    const client = AmazonIVSBroadcastClient.create({
-        streamConfig: AmazonIVSBroadcastClient.BASIC_LANDSCAPE,
+let client = null;
+let mediaStream = null;
+
+// 選択中の解像度プリセットでクライアントを作り直し、プレビューとデバイスを再設定する
+// （streamConfigはクライアント生成時にしか指定できないため、プリセット変更のたびに作り直す）
+async function setupClient(presetKey) {
+    if (client) {
+        client.delete();
+    }
+
+    client = AmazonIVSBroadcastClient.create({
+        streamConfig: AmazonIVSBroadcastClient[presetKey],
     });
 
-    // HTMLのvideo要素に配信プレビューを表示
-    const previewVideo = document.getElementById('preview');
-    client.attachPreview(previewVideo);
+    // HTMLのcanvas要素に配信プレビューを表示
+    const previewCanvas = document.getElementById('preview');
+    client.attachPreview(previewCanvas);
 
-    // カメラとマイクの取得
-    const devices = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    // カメラとマイクの取得（初回のみ）
+    if (!mediaStream) {
+        mediaStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    }
 
     // トラックの追加（addVideoInputDevice/addAudioInputDeviceはMediaStreamを受け取る）
-    client.addVideoInputDevice(devices, 'camera', { index: 0 });
-    client.addAudioInputDevice(devices, 'microphone');
+    client.addVideoInputDevice(mediaStream, 'camera', { index: 0 });
+    client.addAudioInputDevice(mediaStream, 'microphone');
+}
+
+async function initBroadcast() {
+    const presetSelect = document.getElementById('preset-select');
+
+    await setupClient(presetSelect.value);
+
+    // プリセットを変更したらクライアントを作り直す
+    presetSelect.addEventListener('change', () => {
+        setupClient(presetSelect.value).catch(console.error);
+    });
 
     // ボタンをクリックしたら配信スタート
     document.getElementById('start-btn').addEventListener('click', async () => {
         try {
+            presetSelect.disabled = true;
             await client.startBroadcast(STREAM_KEY, INGEST_ENDPOINT);
             console.log('配信が開始されました！');
         } catch (error) {
+            presetSelect.disabled = false;
             console.error('配信の開始に失敗しました:', error);
         }
     });
