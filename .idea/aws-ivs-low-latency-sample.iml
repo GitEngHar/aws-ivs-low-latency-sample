@@ -8,6 +8,7 @@
       <sourceFolder url="file://$MODULE_DIR$/features" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/spec" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/test" isTestSource="true" />
+      <excludeFolder url="file://$MODULE_DIR$/infrastructure/.terraform" />
       <excludeFolder url="file://$MODULE_DIR$/live-control-plane/tmp/cache" />
     </content>
     <orderEntry type="jdk" jdkName="rbenv: 3.4.5" jdkType="RUBY_SDK" />
