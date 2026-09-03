@@ -1,9 +1,10 @@
-// Amazon IVS Web Broadcast SDK をCDNから読み込み
-import AmazonIVSBroadcastClient from 'https://unpkg.com';
+// Amazon IVS Web Broadcast SDK は index.html の <script> タグでCDNから読み込み、
+// グローバル変数 IVSBroadcastClient として公開される
+const AmazonIVSBroadcastClient = window.IVSBroadcastClient;
 
-// AWSコンソールから取得した値を設定してください
-const INGEST_ENDPOINT = 'rtmps://xxxxxx.global-inject.ivstranscode.live:443/app/';
-const STREAM_KEY = 'sk_us-west-2_xxxxxx';
+// frontend/.env (config.jsとして生成) から取得
+const INGEST_ENDPOINT = window.ENV.BROADCAST_INGEST_ENDPOINT;
+const STREAM_KEY = window.ENV.BROADCAST_STREAM_KEY;
 
 async function initBroadcast() {
     const client = AmazonIVSBroadcastClient.create({
@@ -17,9 +18,9 @@ async function initBroadcast() {
     // カメラとマイクの取得
     const devices = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
 
-    // トラックの追加
-    client.addVideoInputDevice(devices.getVideoTracks(), 'camera', { index: 0 });
-    client.addAudioInputDevice(devices.getAudioTracks(), 'microphone');
+    // トラックの追加（addVideoInputDevice/addAudioInputDeviceはMediaStreamを受け取る）
+    client.addVideoInputDevice(devices, 'camera', { index: 0 });
+    client.addAudioInputDevice(devices, 'microphone');
 
     // ボタンをクリックしたら配信スタート
     document.getElementById('start-btn').addEventListener('click', async () => {

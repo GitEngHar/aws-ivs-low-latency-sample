@@ -8,7 +8,7 @@
         body { font-family: sans-serif; margin: 20px; }
         .container { display: flex; gap: 40px; flex-wrap: wrap; }
         .box { border: 1px solid #ccc; padding: 20px; border-radius: 8px; }
-        video { width: 400px; height: 300px; background: #000; border-radius: 4px; }
+        video, canvas { width: 400px; height: 300px; background: #000; border-radius: 4px; }
         button { display: block; margin-top: 10px; padding: 10px; cursor: pointer; }
     </style>
 </head>
@@ -20,7 +20,7 @@
     <!-- 配信エリア -->
     <div class="box">
         <h2>1. 配信側 (Broadcast)</h2>
-        <video id="preview" autoplay muted playsinline></video>
+        <canvas id="preview"></canvas>
         <button id="start-btn">配信開始</button>
     </div>
 
@@ -28,8 +28,16 @@
     <div class="box">
         <h2>2. 視聴側 (Player)</h2>
         <video id="video-player" controls playsinline></video>
+        <button id="watch-btn">視聴開始</button>
     </div>
 </div>
+
+<!-- .env から生成される環境変数 (npm run generate-config で生成、gitignore対象) -->
+<script src="config.js"></script>
+
+<!-- Amazon IVS SDK (UMDビルドのため通常のscriptタグで読み込み、グローバル変数として公開) -->
+<script src="https://web-broadcast.live-video.net/1.39.0/amazon-ivs-web-broadcast.js"></script>
+<script src="https://player.live-video.net/1.55.0/amazon-ivs-player.min.js"></script>
 
 <!-- JavaScriptファイルの参照 -->
 <script type="module" src="broadcast.js"></script>

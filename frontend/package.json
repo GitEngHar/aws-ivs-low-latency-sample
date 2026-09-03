@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "generate-config": "node generate-config.js"
+  },
   "dependencies": {
     "amazon-ivs-player": "^1.55.0",
     "amazon-ivs-web-broadcast": "^1.39.0"

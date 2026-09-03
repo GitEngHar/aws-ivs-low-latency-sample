@@ -1,12 +1,9 @@
-// Amazon IVS Player SDK をCDNから読み込み
-import { create as createPlayer, isPlayerSupported } from 'https://jsdelivr.net';
+// Amazon IVS Player SDK は index.html の <script> タグでCDNから読み込み、
+// グローバル変数 IVSPlayer として公開される
+const { create: createPlayer, isPlayerSupported } = window.IVSPlayer;
 
-// IVS プレーヤーに必要なWeb WorkerとWASMスクリプトの配置場所（AWS公式CDN）
-const wasmBinaryLocation = 'https://live-video.net';
-const wasmWorkerLocation = 'https://live-video.net';
-
-// AWSコンソールから取得した再生URL（.m3u8）を設定してください
-const PLAYBACK_URL = 'https://cloudfront.net';
+// frontend/.env (config.jsとして生成) から取得
+const PLAYBACK_URL = window.ENV.PLAYBACK_URL;
 
 function initPlayer() {
     if (!isPlayerSupported) {
@@ -15,18 +12,19 @@ function initPlayer() {
     }
 
     // プレイヤーの初期化
-    const player = createPlayer({
-        createWorkerSourceURL: () => wasmWorkerLocation,
-        wasmBinaryLocation: wasmBinaryLocation,
-    });
+    // ※ wasmWorkerLocation/wasmBinaryLocationはnpm経由での利用時のみ必要なオプションのため、
+    //   CDNのscriptタグ経由では指定不要（SDKが自身のCDNパスを内部で解決する）
+    const player = createPlayer();
 
     // HTMLのvideo要素にアタッチ
     const videoElement = document.getElementById('video-player');
     player.attachHTMLVideoElement(videoElement);
 
-    // ストリームの読み込みと再生
-    player.load(PLAYBACK_URL);
-    player.play();
+    // ボタンをクリックしたら視聴スタート
+    document.getElementById('watch-btn').addEventListener('click', () => {
+        player.load(PLAYBACK_URL);
+        player.play();
+    });
 }
 
 initPlayer();
