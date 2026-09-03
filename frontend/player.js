@@ -10,6 +10,11 @@ const MAX_TOKEN_REFRESHES = 3;
 // トークン失効ちょうどで再生が止まらないよう、期限の少し手前で更新する
 const TOKEN_REFRESH_MARGIN_MS = 5000;
 
+// 配信側がチャネル状態(公開/非公開)を切り替える間、視聴側は一時的に再生が止まる。
+// 配信が再開されるまでこの間隔でチャネル情報を取得し直して再接続を試みる
+const RECONNECT_INTERVAL_MS = 3000;
+const MAX_RECONNECT_ATTEMPTS = 20;
+
 const channelSelect = document.getElementById('watch-channel-select');
 const watchBtn = document.getElementById('watch-btn');
 const qualitySelect = document.getElementById('quality-select');
@@ -21,6 +26,12 @@ let player = null;
 let selectedChannel = null;
 let refreshTimer = null;
 let refreshCount = 0;
+
+// ユーザーが「視聴開始」を押して以降trueになり、再接続ループを動かす条件になる
+let isWatching = false;
+let reconnectTimer = null;
+let reconnectAttempts = 0;
+let reconnectLoopActive = false;
 
 function showStatus(message) {
     statusEl.textContent = message;
@@ -35,6 +46,57 @@ function decodeTokenExp(token) {
 function clearScheduledRefresh() {
     clearTimeout(refreshTimer);
     refreshTimer = null;
+}
+
+// 再接続ループを止める。実際に再生が再開した(PLAYING)時、視聴を止めた時、
+// チャネルを切り替えた時に呼ぶ
+function stopReconnectLoop() {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    reconnectAttempts = 0;
+    reconnectLoopActive = false;
+}
+
+// 配信側の公開設定切替(停止→切替→再開)で視聴が一時的に途切れた際、配信再開を検知して
+// 自動で再接続する。チャネル情報を取り直すのは、切替後にauthorized/playback_urlが
+// 変わっている可能性があるため
+function scheduleNextReconnectAttempt() {
+    reconnectAttempts += 1;
+
+    if (reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+        showStatus(`配信の再開を検知できませんでした（${MAX_RECONNECT_ATTEMPTS}回試行）。もう一度「視聴開始」を押してください。`);
+        stopReconnectLoop();
+        isWatching = false;
+        return;
+    }
+
+    showStatus(`配信の再開を待っています... (再接続 ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}回目)`);
+
+    reconnectTimer = setTimeout(async () => {
+        try {
+            const refreshed = await getChannel(selectedChannel.id);
+            selectedChannel = refreshed;
+            await playChannel(refreshed);
+            // load/playが成功しても実際に配信が復帰したとは限らないため、ここではループを
+            // 止めない。復帰の判定は PlayerState.PLAYING イベント側で行う
+        } catch (error) {
+            // チャネル取得やトークン発行が失敗した場合(配信がまだ止まっている等)も次を試す
+        }
+        // 上のawait中にPLAYINGが発火してstopReconnectLoop()が呼ばれていたら、
+        // ここでチェーンを打ち切る（でないとPLAYING後も無限に再試行し続けてしまう）
+        if (reconnectLoopActive) {
+            scheduleNextReconnectAttempt();
+        }
+    }, RECONNECT_INTERVAL_MS);
+}
+
+function startReconnectLoop() {
+    if (!isWatching || !selectedChannel || reconnectLoopActive) {
+        return;
+    }
+
+    reconnectLoopActive = true;
+    scheduleNextReconnectAttempt();
 }
 
 // 新しいソースを読み込む間、直前のチャネルの画質選択肢を表示したままにしない
@@ -126,6 +188,8 @@ async function playChannel(channel) {
 async function selectChannel(channelId) {
     clearScheduledRefresh();
     refreshCount = 0;
+    stopReconnectLoop();
+    isWatching = false;
 
     if (!channelId) {
         selectedChannel = null;
@@ -208,6 +272,28 @@ function initPlayer() {
         syncQualitySelectValue();
     });
 
+    // 実際に再生が再開できたら再接続ループを止める
+    player.addEventListener(PlayerState.PLAYING, () => {
+        if (reconnectLoopActive) {
+            showStatus('');
+        }
+        stopReconnectLoop();
+    });
+
+    // 配信側の公開設定切替や意図しない切断で配信が途切れると ENDED/ERROR が発生する。
+    // 視聴継続中であれば配信の再開を待って自動的に再接続する
+    player.addEventListener(PlayerState.ENDED, () => {
+        if (isWatching) {
+            startReconnectLoop();
+        }
+    });
+
+    player.addEventListener(PlayerEventType.ERROR, () => {
+        if (isWatching) {
+            startReconnectLoop();
+        }
+    });
+
     qualitySelect.addEventListener('change', () => {
         if (qualitySelect.value === AUTO_QUALITY_VALUE) {
             player.setAutoQualityMode(true);
@@ -230,6 +316,8 @@ function initPlayer() {
         }
         showStatus('');
         refreshCount = 0;
+        stopReconnectLoop();
+        isWatching = true;
         try {
             await playChannel(selectedChannel);
         } catch (error) {
