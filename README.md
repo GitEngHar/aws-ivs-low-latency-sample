@@ -38,3 +38,12 @@ Amazon IVS (Interactive Video Service) を使った低レイテンシーライ�
 ```
 
 各ディレクトリのセットアップ手順・詳細は、それぞれの README を参照してください。
+
+
+```bash
+# Private Keyを生成
+openssl ecparam -name secp384r1 -genkey -noout -out priv.pem
+
+# Private KeyからPublic Keyを生成
+openssl ec -in priv.pem -pubout -out public.pem
+```
