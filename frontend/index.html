@@ -22,6 +22,15 @@
 <h1>AWS IVS 低レイテンシー デモ</h1>
 
 <div class="container">
+    <!-- 通信品質チェックエリア -->
+    <div class="box">
+        <h2>0. 配信前 通信品質チェック</h2>
+        <p>S3上のダミーファイルを使って回線速度を計測し、1080p/720p/480pのどこまで配信できるか確認します。</p>
+        <button id="quality-check-btn">通信速度をチェック</button>
+        <p id="quality-check-status" class="status"></p>
+        <div id="quality-check-result"></div>
+    </div>
+
     <!-- 配信エリア -->
     <div class="box">
         <h2>1. 配信側 (Broadcast)</h2>
@@ -94,6 +103,7 @@
 <script type="module" src="broadcast.js"></script>
 <script type="module" src="player.js"></script>
 <script type="module" src="admin.js"></script>
+<script type="module" src="communication-quality.js"></script>
 
 </body>
 </html>
