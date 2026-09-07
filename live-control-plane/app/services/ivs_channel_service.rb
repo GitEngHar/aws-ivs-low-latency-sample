@@ -19,12 +19,18 @@ class IvsChannelService
     @client = client
   end
 
+  # Tag keys re-applied to the auto-created stream key (a subset of the
+  # channel's tags). Only "Env" is needed there, so other channel tags
+  # (e.g. a future channel-name tag) are not copied over.
+  STREAM_KEY_TAG_KEYS = %w[Env].freeze
+
   # Creates a new public STANDARD IVS channel.
   # A blank name is omitted so AWS applies its own default naming.
   #
   # CreateChannel auto-creates a stream key for the channel, but its `tags`
-  # param only tags the channel resource, not that stream key. So the same
-  # tags are re-applied to the stream key via TagResource after creation.
+  # param only tags the channel resource, not that stream key. So a subset
+  # of those tags (STREAM_KEY_TAG_KEYS) is re-applied to the stream key via
+  # TagResource after creation.
   #
   # Raises Aws::IVS::Errors::ServiceError on failure.
   def create_channel(name: nil, tags: nil)
@@ -33,7 +39,10 @@ class IvsChannelService
     params[:tags] = tags if tags.present?
 
     response = @client.create_channel(params)
-    @client.tag_resource(resource_arn: response.stream_key.arn, tags: tags) if tags.present?
+
+    stream_key_tags = tags&.slice(*STREAM_KEY_TAG_KEYS)
+    @client.tag_resource(resource_arn: response.stream_key.arn, tags: stream_key_tags) if stream_key_tags.present?
+
     response
   end
 
