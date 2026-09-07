@@ -14,11 +14,12 @@ module Live
       channels = Channel.where(user_id: current_user_id)
       render json: { channels: channels.map { |channel| channel_summary(channel) } }
     end
-
     # チャネル作成（AWS IVS側の作成に成功した場合のみDBに永続化する）
     def create
-      response = ivs_channel_service.create_channel(name: params[:name])
-
+      response = ivs_channel_service.create_channel(
+        name: params[:name],
+        tags: { "Env" => "local" },
+      )
       channel = Channel.create!(
         user_id: current_user_id,
         name: response.channel.name,
