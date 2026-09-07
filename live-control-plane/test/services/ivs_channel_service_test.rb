@@ -3,7 +3,7 @@ require "ostruct"
 
 class IvsChannelServiceTest < ActiveSupport::TestCase
   class FakeIvsClient
-    attr_reader :create_channel_args, :update_channel_args
+    attr_reader :create_channel_args, :update_channel_args, :tag_resource_args
 
     def initialize(create_response:, update_response:)
       @create_response = create_response
@@ -18,6 +18,10 @@ class IvsChannelServiceTest < ActiveSupport::TestCase
     def update_channel(args)
       @update_channel_args = args
       @update_response
+    end
+
+    def tag_resource(args)
+      @tag_resource_args = args
     end
   end
 
@@ -40,6 +44,39 @@ class IvsChannelServiceTest < ActiveSupport::TestCase
     service.create_channel
 
     assert_equal({ type: "STANDARD", authorized: false }, client.create_channel_args)
+  end
+
+  test "create_channel passes tags through to the IVS client when given" do
+    fake_response = OpenStruct.new(channel: OpenStruct.new(arn: "arn:1"), stream_key: OpenStruct.new(value: "sk_1", arn: "arn:sk:1"))
+    client = FakeIvsClient.new(create_response: fake_response, update_response: nil)
+    service = IvsChannelService.new(client: client)
+
+    service.create_channel(name: "my-channel", tags: { "Env" => "local" })
+
+    assert_equal(
+      { type: "STANDARD", authorized: false, name: "my-channel", tags: { "Env" => "local" } },
+      client.create_channel_args
+    )
+  end
+
+  test "create_channel also tags the auto-created stream key when tags are given" do
+    fake_response = OpenStruct.new(channel: OpenStruct.new(arn: "arn:1"), stream_key: OpenStruct.new(value: "sk_1", arn: "arn:sk:1"))
+    client = FakeIvsClient.new(create_response: fake_response, update_response: nil)
+    service = IvsChannelService.new(client: client)
+
+    service.create_channel(name: "my-channel", tags: { "Env" => "local" })
+
+    assert_equal({ resource_arn: "arn:sk:1", tags: { "Env" => "local" } }, client.tag_resource_args)
+  end
+
+  test "create_channel does not tag the stream key when no tags are given" do
+    fake_response = OpenStruct.new(channel: OpenStruct.new(arn: "arn:1"), stream_key: OpenStruct.new(value: "sk_1", arn: "arn:sk:1"))
+    client = FakeIvsClient.new(create_response: fake_response, update_response: nil)
+    service = IvsChannelService.new(client: client)
+
+    service.create_channel(name: "my-channel")
+
+    assert_nil client.tag_resource_args
   end
 
   test "update_authorization calls the IVS client with the given arn and authorized flag" do

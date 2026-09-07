@@ -21,12 +21,20 @@ class IvsChannelService
 
   # Creates a new public STANDARD IVS channel.
   # A blank name is omitted so AWS applies its own default naming.
+  #
+  # CreateChannel auto-creates a stream key for the channel, but its `tags`
+  # param only tags the channel resource, not that stream key. So the same
+  # tags are re-applied to the stream key via TagResource after creation.
+  #
   # Raises Aws::IVS::Errors::ServiceError on failure.
-  def create_channel(name: nil)
+  def create_channel(name: nil, tags: nil)
     params = { type: "STANDARD", authorized: false }
     params[:name] = name if name.present?
+    params[:tags] = tags if tags.present?
 
-    @client.create_channel(params)
+    response = @client.create_channel(params)
+    @client.tag_resource(resource_arn: response.stream_key.arn, tags: tags) if tags.present?
+    response
   end
 
   # Flips an existing channel's authorized (private) flag.
