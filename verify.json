@@ -1,0 +1,134 @@
+{
+  "Statement": [
+    {
+      "Action": [
+        "ivs:ListStreams",
+        "ivs:ListChannels"
+      ],
+      "Effect": "Allow",
+      "Resource": "*",
+      "Sid": "AllowListIvsResources"
+    },
+    {
+      "Action": [
+        "ivs:CreateStreamKey",
+        "ivs:CreateChannel"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Env": "local"
+        }
+      },
+      "Effect": "Allow",
+      "Resource": "*",
+      "Sid": "AllowCreateIvsResources"
+    },
+    {
+      "Action": [
+        "ivs:UpdateChannel",
+        "ivs:PutMetadata",
+        "ivs:ListStreamKeys",
+        "ivs:GetStream",
+        "ivs:GetChannel",
+        "ivs:BatchGetChannel"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Env": "local"
+        }
+      },
+      "Effect": "Allow",
+      "Resource": "arn:aws:ivs:ap-northeast-1:363471485358:channel/*",
+      "Sid": "AllowManageIvsChannels"
+    },
+    {
+      "Action": [
+        "ivs:StopStream",
+        "ivs:DeleteChannel"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Env": "local"
+        }
+      },
+      "Effect": "Allow",
+      "Resource": "arn:aws:ivs:ap-northeast-1:363471485358:channel/*",
+      "Sid": "AllowDeleteAndStopIvsChannels"
+    },
+    {
+      "Action": [
+        "ivs:GetStreamKey",
+        "ivs:BatchGetStreamKey"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Env": "local"
+        }
+      },
+      "Effect": "Allow",
+      "Resource": "arn:aws:ivs:ap-northeast-1:363471485358:stream-key/*",
+      "Sid": "AllowGetIvsStreamKeys"
+    },
+    {
+      "Action": "ivs:DeleteStreamKey",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Env": "local"
+        }
+      },
+      "Effect": "Allow",
+      "Resource": "arn:aws:ivs:ap-northeast-1:363471485358:stream-key/*",
+      "Sid": "AllowDeleteIvsStreamKeys"
+    },
+    {
+      "Action": "ivs:TagResource",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Env": "local",
+          "aws:ResourceTag/Env": "local"
+        }
+      },
+      "Effect": "Allow",
+      "Resource": "arn:aws:ivs:ap-northeast-1:363471485358:channel/*",
+      "Sid": "AllowTagIvsChannels"
+    },
+    {
+      "Action": "ivs:TagResource",
+      "Condition": {
+        "ForAllValues:StringEquals": {
+          "aws:TagKeys": "Env"
+        },
+        "Null": {
+          "aws:ResourceTag/Env": "true"
+        },
+        "StringEquals": {
+          "aws:RequestTag/Env": "local"
+        }
+      },
+      "Effect": "Allow",
+      "Resource": "arn:aws:ivs:ap-northeast-1:363471485358:stream-key/*",
+      "Sid": "AllowSetEnvLocalTagOnIvsStreamKeys"
+    },
+    {
+      "Action": [
+        "ivs:UntagResource",
+        "ivs:ListTagsForResource"
+      ],
+      "Condition": {
+        "ForAllValues:StringNotEquals": {
+          "aws:TagKeys": "Env"
+        },
+        "StringEquals": {
+          "aws:ResourceTag/Env": "local"
+        }
+      },
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:ivs:ap-northeast-1:363471485358:stream-key/*",
+        "arn:aws:ivs:ap-northeast-1:363471485358:channel/*"
+      ],
+      "Sid": "AllowUntagAndListTagsIvsResources"
+    }
+  ],
+  "Version": "2012-10-17"
+}

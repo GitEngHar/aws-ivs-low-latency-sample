@@ -46,6 +46,32 @@ class IvsChannelService
     response
   end
 
+  # ListStreamKeys rejects max_results above this.
+  LIST_STREAM_KEYS_MAX_RESULTS = 50
+
+  # Lists every stream key for a channel. ListStreamKeys defaults to
+  # max_results: 1, so this pages through next_token until exhausted rather
+  # than silently returning a truncated list.
+  #
+  # Raises Aws::IVS::Errors::ServiceError on failure.
+  def list_stream_keys(arn:)
+    stream_keys = []
+    next_token = nil
+
+    loop do
+      params = { channel_arn: arn, max_results: LIST_STREAM_KEYS_MAX_RESULTS }
+      params[:next_token] = next_token if next_token.present?
+
+      response = @client.list_stream_keys(params)
+      stream_keys.concat(response.stream_keys)
+
+      next_token = response.next_token
+      break if next_token.blank?
+    end
+
+    stream_keys
+  end
+
   # Flips an existing channel's authorized (private) flag.
   #
   # IVS refuses to update a channel while it is still broadcasting, so a stream
