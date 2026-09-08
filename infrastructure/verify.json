@@ -11,8 +11,19 @@
     },
     {
       "Action": [
+        "s3:GetBucketLocation",
+        "s3:GetBucketPolicy",
+        "s3:ListBucket"
+      ],
+      "Effect": "Allow",
+      "Resource": "arn:aws:s3:::test-myapp-streams",
+      "Sid": "AllowIvsValidateRecordingBucket"
+    },
+    {
+      "Action": [
         "ivs:CreateStreamKey",
-        "ivs:CreateChannel"
+        "ivs:CreateChannel",
+        "ivs:CreateRecordingConfiguration"
       ],
       "Condition": {
         "StringEquals": {
@@ -27,7 +38,6 @@
       "Action": [
         "ivs:UpdateChannel",
         "ivs:PutMetadata",
-        "ivs:ListStreamKeys",
         "ivs:GetStream",
         "ivs:GetChannel",
         "ivs:BatchGetChannel"
@@ -54,6 +64,12 @@
       "Effect": "Allow",
       "Resource": "arn:aws:ivs:ap-northeast-1:363471485358:channel/*",
       "Sid": "AllowDeleteAndStopIvsChannels"
+    },
+    {
+      "Action": "ivs:ListStreamKeys",
+      "Effect": "Allow",
+      "Resource": "arn:aws:ivs:ap-northeast-1:363471485358:stream-key/*",
+      "Sid": "AllowListIvsStreamKeys"
     },
     {
       "Action": [
@@ -91,6 +107,28 @@
       "Effect": "Allow",
       "Resource": "arn:aws:ivs:ap-northeast-1:363471485358:channel/*",
       "Sid": "AllowTagIvsChannels"
+    },
+    {
+      "Action": "ivs:TagResource",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Env": "local"
+        }
+      },
+      "Effect": "Allow",
+      "Resource": "arn:aws:ivs:ap-northeast-1:363471485358:recording-configuration/*",
+      "Sid": "AllowTagIvsRecordingConfigurations"
+    },
+    {
+      "Action": "ivs:GetRecordingConfiguration",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Env": "local"
+        }
+      },
+      "Effect": "Allow",
+      "Resource": "arn:aws:ivs:ap-northeast-1:363471485358:recording-configuration/*",
+      "Sid": "AllowGetIvsRecordingConfigurations"
     },
     {
       "Action": "ivs:TagResource",
