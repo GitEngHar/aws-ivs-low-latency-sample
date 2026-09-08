@@ -9,11 +9,21 @@ class IvsChannelService
   # Raised when a channel could not be confirmed stopped within MAX_STOP_CHECK_ATTEMPTS.
   class StopStreamFailed < StandardError; end
 
+  # Raised when a recording configuration could not be confirmed ACTIVE within
+  # MAX_RECORDING_CONFIGURATION_CHECK_ATTEMPTS.
+  class RecordingConfigurationNotReady < StandardError; end
+
   # UpdateChannel rejects requests while the channel is still live, so a stream
   # stopped moments ago may not be reflected yet. Poll until IVS confirms the
   # channel is no longer broadcasting before attempting the switch.
   MAX_STOP_CHECK_ATTEMPTS = 10
   STOP_CHECK_INTERVAL = 1 # seconds
+
+  # CreateRecordingConfiguration is asynchronous: the resource starts in
+  # CREATING state and CreateChannel rejects a recording_configuration_arn
+  # that isn't ACTIVE yet. Poll until IVS confirms it's ready.
+  MAX_RECORDING_CONFIGURATION_CHECK_ATTEMPTS = 10
+  RECORDING_CONFIGURATION_CHECK_INTERVAL = 1 # seconds
 
   def initialize(client: default_client)
     @client = client
@@ -34,15 +44,38 @@ class IvsChannelService
   #
   # Raises Aws::IVS::Errors::ServiceError on failure.
   def create_channel(name: nil, tags: nil)
+    recording_configuration = @client.create_recording_configuration({
+      name: "defaultConfiguration",
+      destination_configuration: {
+        s3: {
+          bucket_name: ENV.fetch("AWS_S3_BUCKET_NAME"),
+        },
+      },
+      tags: { "Env" => "local" },
+      thumbnail_configuration: {
+        recording_mode: "INTERVAL",
+        target_interval_seconds: 30,
+        resolution: "FULL_HD",
+        storage: ["SEQUENTIAL"],
+      },
+      recording_reconnect_window_seconds: 30,
+      rendition_configuration: {
+        rendition_selection: "CUSTOM",
+        renditions: ["FULL_HD"]
+      }
+    })
+
+    wait_until_recording_configuration_active!(recording_configuration.recording_configuration.arn)
+
     params = { type: "STANDARD", authorized: false }
     params[:name] = name if name.present?
     params[:tags] = tags if tags.present?
+    params[:recording_configuration_arn] = recording_configuration.recording_configuration.arn
 
     response = @client.create_channel(params)
 
     stream_key_tags = tags&.slice(*STREAM_KEY_TAG_KEYS)
     @client.tag_resource(resource_arn: response.stream_key.arn, tags: stream_key_tags) if stream_key_tags.present?
-
     response
   end
 
@@ -131,6 +164,17 @@ class IvsChannelService
     raise StopStreamFailed, "channel did not stop broadcasting in time (arn=#{arn})"
   end
 
+  def wait_until_recording_configuration_active!(arn)
+    MAX_RECORDING_CONFIGURATION_CHECK_ATTEMPTS.times do |attempt|
+      response = @client.get_recording_configuration(arn: arn)
+      return if response.recording_configuration.state == "ACTIVE"
+
+      sleep(RECORDING_CONFIGURATION_CHECK_INTERVAL) unless attempt == MAX_RECORDING_CONFIGURATION_CHECK_ATTEMPTS - 1
+    end
+
+    raise RecordingConfigurationNotReady, "recording configuration did not become ACTIVE in time (arn=#{arn})"
+  end
+
   # IVS raises ChannelNotBroadcasting from GetStream once there is no active stream.
   def channel_stopped?(arn)
     @client.get_stream(channel_arn: arn)
@@ -146,4 +190,19 @@ class IvsChannelService
       secret_access_key: ENV["AWS_SECRET_ACCESS_KEY"]
     )
   end
+
+  def record_live_stream(name: nil, tags: nil)
+    params = { type: "STANDARD", authorized: false }
+    params[:name] = name if name.present?
+    params[:tags] = tags if tags.present?
+
+    response = @client.create_channel(params)
+
+    stream_key_tags = tags&.slice(*STREAM_KEY_TAG_KEYS)
+    @client.tag_resource(resource_arn: response.stream_key.arn, tags: stream_key_tags) if stream_key_tags.present?
+
+    response
+  end
+
+
 end
