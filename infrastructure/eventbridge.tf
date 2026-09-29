@@ -4,6 +4,8 @@
 # intentionally minimal (logs only) — swap aws_cloudwatch_event_target for
 # SNS/Lambda/SQS once a real consumer (e.g. a live-control-plane webhook) is
 # ready, without touching the rule's event pattern.
+#todo 宛先をlambdaにする
+#todo オブジェクトの定期削除用lambdaスケジュールを用意する
 
 resource "aws_cloudwatch_log_group" "ivs_stream_state_change" {
   name              = "/aws/events/${var.name_prefix}/ivs-stream-state-change"
