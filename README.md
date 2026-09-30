@@ -1,7 +1,8 @@
 # AWS IVS 低レイテンシー配信サンプル
 
 Amazon IVS (Interactive Video Service) を使った低レイテンシーライブ配信・視聴のサンプルプロジェクトです。
-配信/視聴を行う `frontend` と、チャンネル管理を行う `live-control-plane` (Rails API) の2つで構成されています。
+配信/視聴を行う `frontend`、チャンネル管理を行う `live-control-plane` (Rails API)、
+周辺AWSリソースを管理する `infrastructure` (Terraform / Go Lambda) で構成されています。
 
 ## 機能一覧
 
@@ -16,36 +17,105 @@ Amazon IVS (Interactive Video Service) を使った低レイテンシーライ�
 - プライベートチャンネル視聴用の再生トークン (JWT/ES384) 発行
 - フロントエンドからのCross-Originアクセスを許可するCORS設定
 
+### infrastructure (AWSリソース / 任意)
+- IVSの Stream State Change / Stream Health Change イベントを EventBridge で捕捉し CloudWatch Logs に出力
+- 録画用S3バケットと、解像度タグに応じたライフサイクルルール
+- Go製Lambda (`infrastructure/lambda`)。現時点では雛形のみで、Terraformからのデプロイは未実装
+
 ## ディレクトリ構成
 
 ```
 .
-├── frontend/            # 配信・視聴のWebデモ
-└── live-control-plane/   # チャンネル管理用 Rails API
+├── frontend/             # 配信・視聴のWebデモ (ビルドツール不要の静的ファイル)
+├── live-control-plane/   # チャンネル管理用 Rails API (SQLite)
+├── infrastructure/       # Terraform (EventBridge / CloudWatch Logs / S3)
+│   └── lambda/           # Go製Lambda (雛形)
+└── go.work               # infrastructure/lambda を含む Go workspace
 ```
+
+## 構成とポート
+
+```
+ブラウザ (http://localhost:5500)
+  ├─ frontend 静的ファイル ── npx serve (5500)
+  ├─ REST API ─────────────▶ live-control-plane (http://localhost:3000) ──▶ AWS IVS API
+  ├─ 配信 (WebRTC/RTMPS) ──▶ AWS IVS ingest endpoint
+  ├─ 再生 (HLS .m3u8) ─────▶ AWS IVS playback URL
+  └─ 通信品質チェック ─────▶ パブリックS3バケット (直接GET/PUT)
+```
+
+| コンポーネント | 起動コマンド | URL |
+| --- | --- | --- |
+| live-control-plane | `bin/rails server` | `http://localhost:3000` |
+| frontend | `npx serve -l 5500` | `http://localhost:5500` |
 
 ## 前提条件
 
-- Node.js (npmが使えること)
-- Ruby 3.4.5 / Bundler (Railsの実行に必要)
-- Amazon IVSを利用できるAWSアカウント・IAMクレデンシャル (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`)
-- OpenSSL (プライベートチャンネル再生用の鍵ペア生成に使用)
-- 通信品質チェック用に、誰でもGET/PUTできるパブリックS3バケット (直下にダウンロード計測用のダミーファイルを配置)
+| ツール | バージョン | 用途 |
+| --- | --- | --- |
+| Ruby / Bundler | 3.4.5 (`live-control-plane/.ruby-version`) | Rails APIの実行 |
+| SQLite | 3.8.0 以上 | Rails のDB |
+| Node.js / npm | - | frontend の依存インストール・`config.js` 生成・静的配信 |
+| AWS CLI | v2 | S3バケット準備・IVS再生キー登録 |
+| OpenSSL | - | プライベートチャンネル再生用の鍵ペア生成 (任意) |
+| Terraform | >= 1.5 | infrastructure の適用 (任意) |
+| Go | 1.24 | Lambda のビルド (任意) |
 
-## 動作手順
+AWS側で以下を用意しておくこと。
 
-### 1. バックエンド (live-control-plane) のセットアップ
+- Amazon IVS を利用できるAWSアカウントと、IAMユーザーのアクセスキー (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`)
+  - `live-control-plane` はチャンネル作成時に `Env=local` タグを付与する。IAMポリシーを `Env=local` タグ条件で絞る場合の例は `infrastructure/verify.json` を参照
+- 通信品質チェック用の、誰でもGET/PUTできるパブリックS3バケット (手順1で作成)
+
+## ローカル起動手順
+
+以下、特に記載がない限りリポジトリのルートから実行する。
+
+### 1. 通信品質チェック用S3バケットの準備 (初回のみ)
+
+frontend はブラウザから直接S3へGET/PUTして回線速度を計測するため、パブリックにGET/PUTできるバケットが必要。
+既に用意済みの場合はスキップしてよい。
+
+```bash
+BUCKET=your-communication-quality-bucket   # 任意のバケット名に置き換える
+REGION=ap-northeast-1
+
+# バケット作成
+aws s3api create-bucket --bucket "$BUCKET" --region "$REGION" \
+  --create-bucket-configuration LocationConstraint="$REGION"
+
+# ブロックパブリックアクセスを解除し、誰でも GET/PUT できるバケットポリシーを設定
+aws s3api put-public-access-block --bucket "$BUCKET" \
+  --public-access-block-configuration BlockPublicAcls=false,IgnorePublicAcls=false,BlockPublicPolicy=false,RestrictPublicBuckets=false
+aws s3api put-bucket-policy --bucket "$BUCKET" --policy "{
+  \"Version\": \"2012-10-17\",
+  \"Statement\": [{
+    \"Effect\": \"Allow\",
+    \"Principal\": \"*\",
+    \"Action\": [\"s3:GetObject\", \"s3:PutObject\"],
+    \"Resource\": \"arn:aws:s3:::$BUCKET/*\"
+  }]
+}"
+
+# frontend のオリジン (http://localhost:5500) からのアクセスを許可するCORS設定
+aws s3api put-bucket-cors --bucket "$BUCKET" \
+  --cors-configuration file://live-control-plane/infra/s3-cors/test-communication-quality-bucket-cors.json
+
+# ダウンロード計測用のダミーファイル (300MB) を生成してバケット直下に配置
+mkfile 300m dummy_300mb.txt            # macOS。Linux では: dd if=/dev/zero of=dummy_300mb.txt bs=1M count=300
+aws s3 cp dummy_300mb.txt "s3://$BUCKET/dummy_300mb.txt"
+```
+
+> ⚠️ このバケットは誰でも読み書きできる状態になる。検証用途専用とし、他のデータは置かないこと。
+
+### 2. バックエンド (live-control-plane) のセットアップと起動
 
 ```bash
 cd live-control-plane
 bundle install
 ```
 
-`.env-sample` を参考に `live-control-plane/.env` を作成する。
-
-```bash
-cp .env-sample .env
-```
+`live-control-plane/.env` を作成する (`.env-sample` は `.gitignore` 対象のため、クローン直後は存在しない場合がある。その場合は以下の内容で新規作成する)。
 
 ```
 AWS_REGION=ap-northeast-1
@@ -53,7 +123,7 @@ AWS_ACCESS_KEY_ID=xxxxxx
 AWS_SECRET_ACCESS_KEY=xxxxxx
 IVS_PLAYBACK_PRIVATE_KEY="-----BEGIN EC PRIVATE KEY-----\nxxxxxx\n-----END EC PRIVATE KEY-----"
 
-# frontendを配信するオリジン (CORS許可オリジン)
+# frontendを配信するオリジン (CORS許可オリジン、カンマ区切りで複数指定可)
 FRONTEND_ORIGINS=http://localhost:5500
 ```
 
@@ -62,6 +132,10 @@ FRONTEND_ORIGINS=http://localhost:5500
 | `AWS_REGION` / `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | IVSチャンネルのCRUD・配信停止に使うAWS SDKクレデンシャル | 必須 |
 | `FRONTEND_ORIGINS` | CORSで許可するフロントエンドのオリジン | 必須 |
 | `IVS_PLAYBACK_PRIVATE_KEY` | プライベートチャンネルの再生トークン署名用EC秘密鍵 (PEM形式) | 任意 (下記参照) |
+
+`.env` は `dotenv-rails` により development/test 環境で自動的に読み込まれる。
+
+#### (任意) プライベートチャンネル用の再生キー
 
 `IVS_PLAYBACK_PRIVATE_KEY` はパブリックチャンネルの配信・視聴では参照されないため、
 基本のデモ動作だけなら未設定でも問題ない。チャンネルを**非公開(プライベート)に切り替えて視聴する**
@@ -77,53 +151,58 @@ openssl ec -in priv.pem -pubout -out public.pem
 
 # 公開鍵をAWS IVSに登録 (Playback Key Pairとしてインポート)
 aws ivs import-playback-key-pair --public-key-material "$(base64 -i public.pem)"
+
+# .env に貼り付ける1行形式 (改行を \n に置換) を出力
+awk 'BEGIN{ORS="\\n"} {print}' priv.pem; echo
 ```
 
-生成した `priv.pem` の中身を1行の `.env` の値 (改行は `\n` に置換) として `IVS_PLAYBACK_PRIVATE_KEY` に設定する。
+出力された文字列を `IVS_PLAYBACK_PRIVATE_KEY="..."` の値として設定する。
+`*.pem` は `.gitignore` 対象だが、秘密鍵はコミットしないよう注意すること。
 
-データベースの準備とサーバー起動 (デフォルトで `http://localhost:3000`):
+#### DB準備とサーバー起動
 
 ```bash
-bin/rails db:prepare
-bin/rails server
+bin/rails db:prepare     # storage/development.sqlite3 を作成しマイグレーションを適用
+bin/rails server         # http://localhost:3000
 ```
 
-### 2. フロントエンド (frontend) のセットアップ
+起動確認:
 
-`live-control-plane` はデフォルトで `3000` 番ポートを使うため、frontendは**別のポート** (例: `5500`) で配信する。
+```bash
+curl http://localhost:3000/up                                          # 200 が返ればOK
+curl -H "X-User-Id: local-user" http://localhost:3000/live/streams/list  # {"channels":[]}
+```
+
+### 3. フロントエンド (frontend) のセットアップと起動
+
+別ターミナルで実行する。`live-control-plane` が `3000` 番ポートを使うため、frontend は**別のポート** (`5500`) で配信する。
 
 ```bash
 cd frontend
 npm install
-```
-
-`.env.example` を参考に `frontend/.env` を作成する。
-
-```bash
 cp .env.example .env
 ```
+
+`frontend/.env` を編集する。
 
 ```
 # live-control-plane (Rails API) のベースURL
 API_BASE_URL=http://localhost:3000
 
-# 配信前の通信品質チェック用。誰でもGET/PUTできるパブリックS3バケットのベースURL
-BUCKET_BASE_URL=https://xxxxxx.s3.ap-northeast-1.amazonaws.com
+# 配信前の通信品質チェック用。手順1で作成したパブリックS3バケットのベースURL
+BUCKET_BASE_URL=https://your-communication-quality-bucket.s3.ap-northeast-1.amazonaws.com
 ```
 
-`.env` の内容からブラウザ側で読み込む `config.js` を生成する (`.env` を編集するたびに再実行):
+`.env` の内容からブラウザ側で読み込む `config.js` を生成し (`.env` を編集するたびに再実行)、静的ファイルを配信する。
 
 ```bash
 npm run generate-config
-```
-
-静的ファイルをローカルサーバーで配信する (`index.html` はES ModulesとカメラAPIを使うため `file://` では開けない):
-
-```bash
 npx serve -l 5500
 ```
 
-### 3. 動作確認
+`index.html` はES ModulesとカメラAPIを使うため、`file://` で直接開くことはできない。
+
+### 4. 動作確認
 
 ブラウザで `http://localhost:5500` を開く。
 
@@ -132,11 +211,57 @@ npx serve -l 5500
 - **視聴側**: チャンネルを選択し「視聴開始」ボタンで再生。画質は手動/自動(ABR)を切替可能
 - **運営者**: 「一覧を更新」で全チャンネルを確認し、強制配信停止・削除が可能
 
+配信と視聴を同時に確認する場合は、同じページを2つのタブで開き、片方で配信・もう片方で視聴するとよい。
+
+> 💰 IVSチャンネルは配信中の時間に応じて課金される。確認後は「配信停止」し、不要なチャンネルは削除しておくこと。
+
+### 5. (任意) infrastructure の適用
+
+IVSイベントのログ出力や録画用バケットを試す場合のみ実施する。ローカル起動 (手順2〜4) には不要。
+
+```bash
+cd infrastructure
+cp terraform.tfvars.example terraform.tfvars   # aws_region / aws_profile を必要に応じて編集
+
+terraform init
+terraform plan
+terraform apply
+```
+
+- State はローカル (`infrastructure/terraform.tfstate`、gitignore 対象) に保存される。リモートバックエンドは未設定
+- 作成されるリソース: EventBridge ルール (IVS Stream State Change / Stream Health Change)、CloudWatch Logs グループ (保持期間1日)、録画用S3バケットとライフサイクルルール
+- イベントログの確認: `aws logs tail /aws/events/ivs-low-latency-sample/ivs-stream-state-change --follow`
+- 片付け: `terraform destroy`
+
+#### Lambda (Go) のビルド
+
+`infrastructure/lambda` は `go.work` でワークスペースに含まれている。現時点では雛形 (各 usecase は TODO) で、Terraform からのデプロイ定義はまだない。
+実行するバッチは環境変数 `BATCH_NAME` (`ivs_event_route` / `movie_delete` / `resolution_tag_add`) で切り替える。
+
+```bash
+cd infrastructure/lambda
+go build ./...
+
+# Lambda (provided.al2023 / arm64) 向けのバイナリを作る場合
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o bootstrap .
+```
+
+## テスト
+
+```bash
+cd live-control-plane
+bin/rails test       # ユニット/コントローラテスト
+bin/rubocop          # Lint
+bin/brakeman         # セキュリティスキャン
+```
+
 ## トラブルシューティング
 
 - `X-User-Id header is required` エラー: フロントエンドは固定のmock user idを自動付与するため、直接APIを叩く場合は `X-User-Id` ヘッダーを付与する
 - チャンネル一覧の取得やチャンネル作成に失敗する場合: `live-control-plane` が起動しているか、`API_BASE_URL` の値が正しいか、`FRONTEND_ORIGINS` にfrontendのオリジンが含まれているかを確認する
+- チャンネル作成で `AccessDeniedException` になる場合: IAMユーザーに IVS の権限があるか確認する (`Env=local` タグ条件付きポリシーの例は `infrastructure/verify.json`)
 - プライベートチャンネルの再生に失敗する場合: `IVS_PLAYBACK_PRIVATE_KEY` の秘密鍵に対応する公開鍵がAWS IVSにPlayback Key Pairとして登録されているか確認する
 - カメラ/マイクが起動しない場合: ブラウザの権限設定、および `http://localhost` や `https://` などのセキュアコンテキストで開いているかを確認する
-- 通信品質チェックが失敗する場合: `BUCKET_BASE_URL` のバケットが誰でもGET/PUTできる設定になっているか、ダウンロード計測用のダミーファイルが配置されているかを確認する
+- 通信品質チェックが失敗する場合: `BUCKET_BASE_URL` のバケットが誰でもGET/PUTできる設定か、CORSで `http://localhost:5500` が許可されているか、`dummy_300mb.txt` が配置されているかを確認する
+- `.env` を変更したのに frontend に反映されない場合: `npm run generate-config` を再実行し、ブラウザをリロードする
 - 配信/再生に失敗する場合: ブラウザのコンソールログと選択中チャンネルの設定値 (ingest endpoint / stream key / playback URL) を確認する

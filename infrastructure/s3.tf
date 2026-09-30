@@ -7,12 +7,11 @@ resource "aws_s3_bucket" "ivs_low_latency_recording_live" {
   }
 }
 
-# todo オブジェクトライフサイクルポリシー
-# 480p動画は1日でDeepArchiveへ移動
+
 resource "aws_s3_bucket_lifecycle_configuration" "ivs_low_latency_recording_live_lifecycle" {
   bucket = aws_s3_bucket.ivs_low_latency_recording_live.bucket
   rule {
-    id = "deep-archive-10-min"
+    id = "480p-deep-archive"
     status = "Enabled"
     filter {
       tag {
@@ -25,4 +24,31 @@ resource "aws_s3_bucket_lifecycle_configuration" "ivs_low_latency_recording_live
       storage_class = "DEEP_ARCHIVE"
     }
   }
+  rule {
+    id = "1080-delete-movie"
+    status = "Enabled"
+    filter {
+      tag {
+        key = "resolution"
+        value = "1080"
+      }
+    }
+    expiration {
+      days = 1
+    }
+  }
+  rule {
+    id = "delete-thumbnail"
+    status = "Enabled"
+    filter {
+      tag {
+        key = "resolution"
+        value = "thumbnail"
+      }
+    }
+    expiration {
+      days = 1
+    }
+  }
 }
+
