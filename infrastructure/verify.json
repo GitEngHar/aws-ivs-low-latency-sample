@@ -16,7 +16,7 @@
         "s3:ListBucket"
       ],
       "Effect": "Allow",
-      "Resource": "arn:aws:s3:::test-myapp-streams",
+      "Resource": ["arn:aws:s3:::test-myapp-streams", "arn:aws:s3:::ivs-low-latency-recording-live/*"],
       "Sid": "AllowIvsValidateRecordingBucket"
     },
     {
