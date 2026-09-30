@@ -39,7 +39,7 @@ Amazon IVS (Interactive Video Service) を使った低レイテンシーライ�
 ブラウザ (http://localhost:5500)
   ├─ frontend 静的ファイル ── npx serve (5500)
   ├─ REST API ─────────────▶ live-control-plane (http://localhost:3000) ──▶ AWS IVS API
-  ├─ 配信 (WebRTC/RTMPS) ──▶ AWS IVS ingest endpoint
+  ├─ 配信 (Web Broadcast SDK) ─▶ AWS IVS ingest endpoint ──▶ 録画 ──▶ 録画用S3バケット
   ├─ 再生 (HLS .m3u8) ─────▶ AWS IVS playback URL
   └─ 通信品質チェック ─────▶ パブリックS3バケット (直接GET/PUT)
 ```
@@ -66,12 +66,16 @@ AWS側で以下を用意しておくこと。
 - Amazon IVS を利用できるAWSアカウントと、IAMユーザーのアクセスキー (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`)
   - `live-control-plane` はチャンネル作成時に `Env=local` タグを付与する。IAMポリシーを `Env=local` タグ条件で絞る場合の例は `infrastructure/verify.json` を参照
 - 通信品質チェック用の、誰でもGET/PUTできるパブリックS3バケット (手順1で作成)
+- 録画用のS3バケット (IVSチャンネルと同じリージョン。手順1で作成)
+  - チャンネル作成時に録画設定 (Recording Configuration) も作成するため、このバケットがないとチャンネルを作成できない
 
 ## ローカル起動手順
 
 以下、特に記載がない限りリポジトリのルートから実行する。
 
-### 1. 通信品質チェック用S3バケットの準備 (初回のみ)
+### 1. S3バケットの準備 (初回のみ)
+
+#### 1-1. 通信品質チェック用バケット
 
 frontend はブラウザから直接S3へGET/PUTして回線速度を計測するため、パブリックにGET/PUTできるバケットが必要。
 既に用意済みの場合はスキップしてよい。
@@ -108,6 +112,21 @@ aws s3 cp dummy_300mb.txt "s3://$BUCKET/dummy_300mb.txt"
 
 > ⚠️ このバケットは誰でも読み書きできる状態になる。検証用途専用とし、他のデータは置かないこと。
 
+#### 1-2. 録画用バケット
+
+チャンネル作成時に、`live-control-plane` がこのバケットを出力先とするIVSの録画設定を作成する。
+パブリックアクセスは不要 (ブロックパブリックアクセスは有効のままでよい)。IVSの録画はサービスリンクロールで書き込むため、バケットポリシーの設定も不要。
+
+```bash
+RECORDING_BUCKET=your-recording-bucket   # 任意のバケット名に置き換える (IVSと同じリージョンに作成すること)
+
+aws s3api create-bucket --bucket "$RECORDING_BUCKET" --region ap-northeast-1 \
+  --create-bucket-configuration LocationConstraint=ap-northeast-1
+```
+
+IAMユーザーには、IVSの権限に加えて `ivs:CreateRecordingConfiguration` / `ivs:GetRecordingConfiguration` と、
+録画用バケットへの `s3:GetBucketLocation` / `s3:GetBucketPolicy` / `s3:ListBucket` の権限が必要 (例は `infrastructure/verify.json`)。
+
 ### 2. バックエンド (live-control-plane) のセットアップと起動
 
 ```bash
@@ -123,17 +142,18 @@ AWS_ACCESS_KEY_ID=xxxxxx
 AWS_SECRET_ACCESS_KEY=xxxxxx
 IVS_PLAYBACK_PRIVATE_KEY="-----BEGIN EC PRIVATE KEY-----\nxxxxxx\n-----END EC PRIVATE KEY-----"
 
-# frontendを配信するオリジン (CORS許可オリジン、カンマ区切りで複数指定可)
-FRONTEND_ORIGINS=http://localhost:5500
+# 録画の出力先 (手順1-2で作成したバケット名)
+AWS_S3_BUCKET_NAME=your-recording-bucket
 ```
 
 | 変数名 | 用途 | 必須 |
 | --- | --- | --- |
 | `AWS_REGION` / `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | IVSチャンネルのCRUD・配信停止に使うAWS SDKクレデンシャル | 必須 |
-| `FRONTEND_ORIGINS` | CORSで許可するフロントエンドのオリジン | 必須 |
+| `AWS_S3_BUCKET_NAME` | チャンネル作成時に作る録画設定の出力先S3バケット名。未設定だとチャンネル作成が500エラーになる | 必須 |
 | `IVS_PLAYBACK_PRIVATE_KEY` | プライベートチャンネルの再生トークン署名用EC秘密鍵 (PEM形式) | 任意 (下記参照) |
 
 `.env` は `dotenv-rails` により development/test 環境で自動的に読み込まれる。
+CORSは `config/initializers/cors.rb` ですべてのオリジンを許可しているため、frontend側のオリジンを設定する必要はない。
 
 #### (任意) プライベートチャンネル用の再生キー
 
@@ -213,7 +233,7 @@ npx serve -l 5500
 
 配信と視聴を同時に確認する場合は、同じページを2つのタブで開き、片方で配信・もう片方で視聴するとよい。
 
-> 💰 IVSチャンネルは配信中の時間に応じて課金される。確認後は「配信停止」し、不要なチャンネルは削除しておくこと。
+> 💰 IVSチャンネルは配信中の時間に応じて課金される。確認後は「配信停止」し、不要なチャンネルは削除しておくこと。録画はS3に保存されるため、S3の保存料金も発生する。
 
 ### 5. (任意) infrastructure の適用
 
@@ -258,7 +278,9 @@ bin/brakeman         # セキュリティスキャン
 ## トラブルシューティング
 
 - `X-User-Id header is required` エラー: フロントエンドは固定のmock user idを自動付与するため、直接APIを叩く場合は `X-User-Id` ヘッダーを付与する
-- チャンネル一覧の取得やチャンネル作成に失敗する場合: `live-control-plane` が起動しているか、`API_BASE_URL` の値が正しいか、`FRONTEND_ORIGINS` にfrontendのオリジンが含まれているかを確認する
+- チャンネル一覧の取得やチャンネル作成に失敗する場合: `live-control-plane` が起動しているか、`API_BASE_URL` の値が正しいかを確認する
+- チャンネル作成が500エラーになる場合: `AWS_S3_BUCKET_NAME` が設定されているか、そのバケットがIVSと同じリージョンに存在するか、IAMユーザーに録画設定の作成権限があるかを確認する (Railsのログに原因が出る)
+- チャンネル作成で録画設定の上限エラーになる場合: チャンネルを作るたびに録画設定 `defaultConfiguration` が新しく作られ、チャンネルを削除しても残る。不要なものを `aws ivs list-recording-configurations` で確認し、`aws ivs delete-recording-configuration --arn <arn>` で削除する
 - チャンネル作成で `AccessDeniedException` になる場合: IAMユーザーに IVS の権限があるか確認する (`Env=local` タグ条件付きポリシーの例は `infrastructure/verify.json`)
 - プライベートチャンネルの再生に失敗する場合: `IVS_PLAYBACK_PRIVATE_KEY` の秘密鍵に対応する公開鍵がAWS IVSにPlayback Key Pairとして登録されているか確認する
 - カメラ/マイクが起動しない場合: ブラウザの権限設定、および `http://localhost` や `https://` などのセキュアコンテキストで開いているかを確認する

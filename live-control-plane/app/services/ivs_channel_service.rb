@@ -59,9 +59,10 @@ class IvsChannelService
         storage: ["SEQUENTIAL"],
       },
       recording_reconnect_window_seconds: 30,
+      # Keep both 1080p (FULL_HD) and 480p (SD) recordings.
       rendition_configuration: {
         rendition_selection: "CUSTOM",
-        renditions: ["FULL_HD"]
+        renditions: %w[FULL_HD SD]
       }
     })
 

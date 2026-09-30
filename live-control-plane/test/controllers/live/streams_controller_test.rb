@@ -14,7 +14,7 @@ module Live
     class FakeIvsChannelService
       Response = Struct.new(:channel, :stream_key)
 
-      def create_channel(name: nil)
+      def create_channel(name: nil, tags: nil)
         OpenStruct.new(
           channel: OpenStruct.new(
             name: name || "-",
