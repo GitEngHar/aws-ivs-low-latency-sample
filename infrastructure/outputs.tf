@@ -7,3 +7,8 @@ output "ivs_stream_state_change_log_group_name" {
   description = "CloudWatch Logs group receiving IVS Stream State Change events"
   value       = aws_cloudwatch_log_group.ivs_stream_state_change.name
 }
+
+output "ivs_event_route_lambda_log_group_name" {
+  description = "CloudWatch Logs group of the ivs_event_route lambda"
+  value       = aws_cloudwatch_log_group.ivs_event_route.name
+}

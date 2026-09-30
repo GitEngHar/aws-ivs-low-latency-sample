@@ -1,12 +1,7 @@
-# Captures AWS IVS "Stream State Change" events (stream start/end) emitted
-# by every IVS channel in the account and writes them to CloudWatch Logs so
-# they can be inspected locally during development. The target is
-# intentionally minimal (logs only) — swap aws_cloudwatch_event_target for
-# SNS/Lambda/SQS once a real consumer (e.g. a live-control-plane webhook) is
-# ready, without touching the rule's event pattern.
-#todo s3にrecord終了オブジェクトが入った際にタグ付lambdaを起動する
-
-#todo ルーティング用lambdaを起動する
+# Captures AWS IVS "Stream State Change" (stream start/end) and
+# "Stream Health Change" (starvation start/end) events emitted by every IVS
+# channel in the account. Each rule writes the raw event to CloudWatch Logs
+# for inspection and also invokes the ivs_event_route lambda (lambda.tf).
 resource "aws_cloudwatch_log_group" "ivs_stream_state_change" {
   name              = "/aws/events/${var.name_prefix}/ivs-stream-state-change"
   retention_in_days = 1
@@ -117,4 +112,34 @@ resource "aws_cloudwatch_log_resource_policy" "ivs_stream_state_change" {
 resource "aws_cloudwatch_event_target" "ivs_stream_state_change_logs" {
   rule = aws_cloudwatch_event_rule.ivs_stream_state_change.name
   arn  = aws_cloudwatch_log_group.ivs_stream_state_change.arn
+}
+
+# ---------------------------------------------------------------------------
+# ivs_event_route lambda targets
+# ---------------------------------------------------------------------------
+locals {
+  ivs_event_route_rules = {
+    stream_state_change = aws_cloudwatch_event_rule.ivs_stream_state_change
+    stream_not_health   = aws_cloudwatch_event_rule.ivs_stream_state_not_health
+    stream_be_health    = aws_cloudwatch_event_rule.ivs_stream_state_be_health
+  }
+}
+
+resource "aws_lambda_permission" "ivs_event_route_eventbridge" {
+  for_each = local.ivs_event_route_rules
+
+  statement_id  = "AllowEventBridgeInvoke-${each.key}"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.ivs_event_route.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = each.value.arn
+}
+
+resource "aws_cloudwatch_event_target" "ivs_event_route_lambda" {
+  for_each = local.ivs_event_route_rules
+
+  rule = each.value.name
+  arn  = aws_lambda_function.ivs_event_route.arn
+
+  depends_on = [aws_lambda_permission.ivs_event_route_eventbridge]
 }

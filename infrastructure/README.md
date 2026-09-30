@@ -20,9 +20,16 @@ cd infrastructure
 cp terraform.tfvars.example terraform.tfvars
 # edit terraform.tfvars: set aws_region / aws_profile as needed
 
+# build the Go lambda binary (required before plan/apply)
+(cd lambda && GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags lambda.norpc -o build/bootstrap .)
+
 terraform init
 terraform plan
 ```
+
+When IVS writes `.../events/recording-ended.json` to the recording bucket,
+an S3 event notification invokes the `resolution-tag-add` lambda
+(`BATCH_NAME=resolution_tag_add`) — see `s3.tf` / `lambda.tf`.
 
 State is local (`terraform.tfstate` in this directory, gitignored) — there is
 no remote backend configured, so `plan`/`apply` work standalone on a laptop.
